@@ -7,89 +7,68 @@ import seaborn as sns
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import numpy as np
 
-# --- Supabase auth helper (requires auth.py from previous step) ---
+# --- Supabase auth helper ---
 from auth import supabase_client, get_user
 sb = supabase_client()
 
 # =========================
-# Load trained final model (pipeline + regression)
+# Load trained final model
 # =========================
 model = joblib.load("final_model.pkl")
-
-# Load your dataset (for average comparisons)
 df = pd.read_csv("cleaned_vehicle_dataset.csv")
 
 # =========================
-# App Layout & Auth UI
+# App Layout
 # =========================
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🚗", layout="wide")
 
-# --- Authentication helper ---
 def safe_rerun():
     try:
         st.experimental_rerun()
     except Exception:
         return
 
-# Fetch current user
+# ---------- Authentication ----------
 user = get_user(sb)
 
-# ---------- Sidebar: Login / Register ----------
 if not user:
     st.sidebar.title("Account")
     login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
 
-    # ---------------- Login Tab ----------------
+    # ---------------- Login ----------------
     with login_tab:
-        login_email = st.text_input(
-            "Email",
-            value=st.session_state.get("login_email", ""),
-            key="login_email"
-        )
-        login_pwd = st.text_input(
-            "Password",
-            type="password",
-            value=st.session_state.get("login_pwd", ""),
-            key="login_pwd"
-        )
+        login_email = st.text_input("Email", key="login_email")
+        login_pwd = st.text_input("Password", type="password", key="login_pwd")
         if st.button("Login", key="login_btn"):
             try:
                 sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
-                st.session_state["login_email"] = ""
-                st.session_state["login_pwd"] = ""
-                st.success("Logged in — reloading...")
+                # Clear inputs before rerun
+                for k in ["login_email", "login_pwd"]:
+                    st.session_state[k] = ""
                 safe_rerun()
             except Exception as e:
                 msg = str(e)
                 if "Email not confirmed" in msg:
                     st.error("Your email is not confirmed. Check your inbox (or spam).")
-                    st.caption("If you didn't receive it, open Supabase → Authentication → Users → Resend confirmation.")
+                    st.caption("If you didn't receive it, resend from Supabase → Authentication → Users → Resend confirmation.")
                 else:
                     st.error(f"Login failed: {e}")
 
-    # ---------------- Register Tab ----------------
+    # ---------------- Register ----------------
     with register_tab:
-        reg_email = st.text_input(
-            "Email (new)",
-            value=st.session_state.get("reg_email", ""),
-            key="reg_email"
-        )
-        reg_pwd = st.text_input(
-            "Password (new)",
-            type="password",
-            value=st.session_state.get("reg_pwd", ""),
-            key="reg_pwd"
-        )
+        reg_email = st.text_input("Email (new)", key="reg_email")
+        reg_pwd = st.text_input("Password (new)", type="password", key="reg_pwd")
         if st.button("Create account", key="register_btn"):
             try:
                 sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
-                st.session_state["reg_email"] = ""
-                st.session_state["reg_pwd"] = ""
-                st.success("Account created. If email confirmation is ON, check your email.")
+                for k in ["reg_email", "reg_pwd"]:
+                    st.session_state[k] = ""
+                st.success("Account created. Check your email if confirmation is enabled.")
+                safe_rerun()
             except Exception as e:
                 st.error(f"Signup failed: {e}")
 
-    st.stop()  # Stop here if not logged in
+    st.stop()  # Stop the main app until logged in
 
 # ---------- Sidebar: Logged-in User ----------
 st.sidebar.success(f"Signed in as {user.email}")
@@ -98,26 +77,23 @@ if st.sidebar.button("Logout", key="logout_btn"):
         sb.auth.sign_out()
     except Exception:
         pass
-    for k in ("login_email", "login_pwd", "reg_email", "reg_pwd"):
+    for k in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
         if k in st.session_state:
             st.session_state[k] = ""
     safe_rerun()
 
-# ---------- Main App (protected) ----------
+# ---------- Main App ----------
 st.title("🚗 Vehicle CO₂ Emissions Predictor")
 st.markdown("Predict vehicle **CO₂ emissions (g/km)** based on specifications using a Multiple Linear Regression model.")
 
-# =========================
-# Sidebar Inputs
-# =========================
+# ---------------- Sidebar Inputs ----------------
 st.sidebar.header("🔧 Enter Vehicle Specifications")
-
 engine_size = st.sidebar.number_input("Engine size (L)", min_value=0.5, max_value=10.0, step=0.1, value=2.0)
 cylinders = st.sidebar.number_input("Number of Cylinders", min_value=3, max_value=12, step=1, value=4)
 fuel_type = st.sidebar.selectbox("Fuel Type", ["Petrol", "Diesel", "Ethanol", "Natural Gas", "Premium Petrol"])
 combined_l_100km = st.sidebar.number_input("Combined (L/100 km)", min_value=2.0, max_value=25.0, step=0.1, value=8.5)
 
-# Predict button
+# ---------------- Prediction ----------------
 if st.sidebar.button("Predict"):
     input_data = pd.DataFrame({
         "Engine size (L)": [engine_size],
@@ -127,7 +103,7 @@ if st.sidebar.button("Predict"):
     })
     prediction = model.predict(input_data)[0]
 
-    # ---------------- Results ----------------
+    # Results
     st.subheader("🔮 Predicted CO₂ Emissions")
     st.metric("CO₂ emissions (g/km)", f"{prediction:.2f}")
 
@@ -146,7 +122,7 @@ if st.sidebar.button("Predict"):
     st.write(f"**RMSE:** {rmse:.2f} g/km")
     st.write(f"**MAE:** {mae:.2f} g/km")
 
-    # ---------------- Graphs ----------------
+    # Graphs
     col1, col2 = st.columns(2)
     with col1:
         st.write("### 📈 Actual vs Predicted")
@@ -177,7 +153,7 @@ if st.sidebar.button("Predict"):
     sns.barplot(x="Category", y="CO₂ emissions (g/km)", data=comparison_df, palette="Set2", ax=ax)
     st.pyplot(fig)
 
-    # ---------------- Save Prediction ----------------
+    # Save Prediction
     try:
         current_user_resp = sb.auth.get_user()
         current_user = None
@@ -197,7 +173,7 @@ if st.sidebar.button("Predict"):
     except Exception as e:
         st.warning(f"Could not save prediction to history: {e}")
 
-    # ---------------- User Prediction History ----------------
+    # User Prediction History
     st.write("---")
     st.subheader("🗂️ Your recent predictions")
     try:
@@ -216,8 +192,6 @@ if st.sidebar.button("Predict"):
     except Exception as e:
         st.warning(f"Could not load history: {e}")
 
-# =========================
 # Footer
-# =========================
 st.write("---")
 st.markdown("Built with ❤️ using **Python, Streamlit, and Scikit-learn**  \nProject by: *Sajivan & Team*")
