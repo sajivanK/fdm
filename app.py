@@ -35,9 +35,11 @@ for key in ["login_email", "login_pwd", "reg_email", "reg_pwd", "logged_in"]:
         st.session_state[key] = "" if "email" in key or "pwd" in key else False
 
 # ---------- Authentication ----------
+# Fetch user
 user = get_user(sb)
 
-if not user or not st.session_state.logged_in:
+# ---------------- LOGIN / REGISTER ----------------
+if not user:
     st.sidebar.title("Account")
     login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
 
@@ -45,11 +47,13 @@ if not user or not st.session_state.logged_in:
     with login_tab:
         login_email = st.text_input("Email", value=st.session_state.login_email, key="login_email")
         login_pwd = st.text_input("Password", type="password", value=st.session_state.login_pwd, key="login_pwd")
+
         if st.button("Login", key="login_btn"):
             try:
                 sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
-                st.session_state.logged_in = True  # Set login flag
-                safe_rerun()  # rerun app; login inputs disappear
+                st.session_state.logged_in = True
+                st.success("Logged in — reloading...")
+                safe_rerun()
             except Exception as e:
                 msg = str(e)
                 if "Email not confirmed" in msg:
@@ -62,6 +66,7 @@ if not user or not st.session_state.logged_in:
     with register_tab:
         reg_email = st.text_input("Email (new)", value=st.session_state.reg_email, key="reg_email")
         reg_pwd = st.text_input("Password (new)", type="password", value=st.session_state.reg_pwd, key="reg_pwd")
+
         if st.button("Create account", key="register_btn"):
             try:
                 sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
@@ -70,19 +75,24 @@ if not user or not st.session_state.logged_in:
             except Exception as e:
                 st.error(f"Signup failed: {e}")
 
-    st.stop()  # Stop main app until logged in
+    st.stop()
 
-# ---------- Sidebar: Logged-in User ----------
+# Refetch user immediately after login/logout
+user = get_user(sb)
+
+# ---------------- Sidebar: Logged-in User ----------------
 st.sidebar.success(f"Signed in as {user.email}")
 if st.sidebar.button("Logout", key="logout_btn"):
     try:
         sb.auth.sign_out()
     except Exception:
         pass
-    st.session_state.logged_in = False
+    # Clear session_state flags
+    for k in ["login_email", "login_pwd", "reg_email", "reg_pwd", "logged_in"]:
+        st.session_state[k] = "" if "email" in k or "pwd" in k else False
     safe_rerun()
 
-# ---------- Main App ----------
+# ---------------- Main App ----------------
 st.title("🚗 Vehicle CO₂ Emissions Predictor")
 st.markdown("Predict vehicle **CO₂ emissions (g/km)** based on specifications using a Multiple Linear Regression model.")
 
@@ -103,7 +113,6 @@ if st.sidebar.button("Predict"):
     })
     prediction = model.predict(input_data)[0]
 
-    # Results
     st.subheader("🔮 Predicted CO₂ Emissions")
     st.metric("CO₂ emissions (g/km)", f"{prediction:.2f}")
 
@@ -122,7 +131,6 @@ if st.sidebar.button("Predict"):
     st.write(f"**RMSE:** {rmse:.2f} g/km")
     st.write(f"**MAE:** {mae:.2f} g/km")
 
-    # Graphs
     col1, col2 = st.columns(2)
     with col1:
         st.write("### 📈 Actual vs Predicted")
@@ -153,7 +161,7 @@ if st.sidebar.button("Predict"):
     sns.barplot(x="Category", y="CO₂ emissions (g/km)", data=comparison_df, palette="Set2", ax=ax)
     st.pyplot(fig)
 
-    # Save Prediction
+    # Save prediction
     try:
         current_user_resp = sb.auth.get_user()
         current_user = getattr(current_user_resp, "user", current_user_resp.get("user", None))
@@ -168,7 +176,7 @@ if st.sidebar.button("Predict"):
     except Exception as e:
         st.warning(f"Could not save prediction to history: {e}")
 
-    # User Prediction History
+    # Display user prediction history
     st.write("---")
     st.subheader("🗂️ Your recent predictions")
     try:
