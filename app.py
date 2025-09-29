@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import joblib
@@ -5,6 +6,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import numpy as np
+
+# --- Supabase auth helper (requires auth.py from previous step) ---
+from auth import supabase_client, get_user
+sb = supabase_client()
 
 # =========================
 # Load trained final model (pipeline + regression)
@@ -15,10 +20,52 @@ model = joblib.load("final_model.pkl")
 df = pd.read_csv("cleaned_vehicle_dataset.csv")
 
 # =========================
-# App Layout
+# App Layout & Auth UI
 # =========================
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🚗", layout="wide")
 
+# --- Authentication UI (put this BEFORE your main app UI) ---
+# Using the sidebar keeps the main UI clean.
+st.sidebar.title("Account")
+
+login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
+
+with login_tab:
+    login_email = st.text_input("Email", key="login_email")
+    login_pwd = st.text_input("Password", type="password", key="login_pwd")
+    if st.button("Login", key="login_btn"):
+        try:
+            sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
+            st.success("Logged in — reloading...")
+            st.experimental_rerun()
+        except Exception as e:
+            st.error(f"Login failed: {e}")
+
+with register_tab:
+    reg_email = st.text_input("Email (new)", key="reg_email")
+    reg_pwd = st.text_input("Password (new)", type="password", key="reg_pwd")
+    if st.button("Create account", key="register_btn"):
+        try:
+            sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
+            st.success("Account created. If email confirmation is ON, check your email.")
+        except Exception as e:
+            st.error(f"Signup failed: {e}")
+
+# Show user info & logout
+user = get_user(sb)
+if user:
+    st.sidebar.success(f"Signed in as {user.email}")
+    if st.sidebar.button("Logout", key="logout_btn"):
+        try:
+            sb.auth.sign_out()
+        except Exception:
+            pass
+        st.experimental_rerun()
+else:
+    st.info("Please log in or register to use the CO₂ predictor.")
+    st.stop()
+
+# ---------- Main App (protected) ----------
 st.title("🚗 Vehicle CO₂ Emissions Predictor")
 st.markdown("Predict vehicle **CO₂ emissions (g/km)** based on specifications using a Multiple Linear Regression model.")
 
@@ -34,7 +81,7 @@ combined_l_100km = st.sidebar.number_input("Combined (L/100 km)", min_value=2.0,
 
 # Predict button
 if st.sidebar.button("Predict"):
-    # Convert input to DataFrame
+    # Convert input to DataFrame (make sure column names match training pipeline)
     input_data = pd.DataFrame({
         "Engine size (L)": [engine_size],
         "Cylinders": [cylinders],
@@ -105,6 +152,68 @@ if st.sidebar.button("Predict"):
     fig, ax = plt.subplots(figsize=(6,4))
     sns.barplot(x="Category", y="CO₂ emissions (g/km)", data=comparison_df, palette="Set2", ax=ax)
     st.pyplot(fig)
+
+    # =========================
+    # Save prediction to Supabase (per-user)
+    # =========================
+    try:
+        # fetch latest user object (not cached)
+        current_user_resp = sb.auth.get_user()
+        current_user = None
+        if hasattr(current_user_resp, "user"):
+            current_user = current_user_resp.user
+        elif isinstance(current_user_resp, dict) and "user" in current_user_resp:
+            current_user = current_user_resp["user"]
+
+        if current_user is not None:
+            # prepare features payload: try DataFrame -> dict fallback to manual dict
+            try:
+                features_payload = input_data.iloc[0].to_dict()
+            except Exception:
+                # fallback if input_data is not present / different structure
+                features_payload = {
+                    "Engine size (L)": engine_size,
+                    "Cylinders": cylinders,
+                    "Fuel type": fuel_type,
+                    "Combined (L/100 km)": combined_l_100km
+                }
+
+            payload = {
+                "user_id": current_user.id,
+                "features": features_payload,
+                "predicted_co2": float(prediction)
+            }
+            sb.table("co2_predictions").insert(payload).execute()
+    except Exception as e:
+        # Non-fatal: app still works even if saving fails
+        st.warning(f"Could not save prediction to history: {e}")
+
+    # =========================
+    # Show user's recent history (optional)
+    # =========================
+    st.write("---")
+    st.subheader("🗂️ Your recent predictions")
+    try:
+        hist = sb.table("co2_predictions") \
+                 .select("*") \
+                 .order("created_at", desc=True) \
+                 .limit(20).execute()
+
+        if hist and getattr(hist, "data", None):
+            rows = []
+            for r in hist.data:
+                row = {"When": r["created_at"], "Predicted CO₂ (g/km)": r["predicted_co2"]}
+                if r.get("features"):
+                    # merge feature keys
+                    for k, v in r["features"].items():
+                        row[k] = v
+                rows.append(row)
+            df_hist = pd.DataFrame(rows)
+            st.dataframe(df_hist, use_container_width=True)
+        else:
+            st.caption("No saved predictions yet.")
+    except Exception as e:
+        st.warning(f"Could not load history: {e}")
 
 # =========================
 # Footer
