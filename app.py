@@ -22,77 +22,80 @@ df = pd.read_csv("cleaned_vehicle_dataset.csv")
 # =========================
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🚗", layout="wide")
 
-# ---------- Safe rerun helper ----------
-def safe_rerun():
+# ---------- Initialize session_state keys ----------
+for key in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
+# ---------- Login callback ----------
+def login_callback():
     try:
+        sb.auth.sign_in_with_password({
+            "email": st.session_state.login_email,
+            "password": st.session_state.login_pwd
+        })
+        st.session_state.login_email = ""
+        st.session_state.login_pwd = ""
+        st.success("Logged in — reloading...")
         st.experimental_rerun()
+    except Exception as e:
+        msg = str(e)
+        if "Email not confirmed" in msg:
+            st.error("Your email is not confirmed. Check your inbox (or spam).")
+            st.caption("If you didn't receive it, resend from Supabase → Authentication → Users → Resend confirmation.")
+        else:
+            st.error(f"Login failed: {e}")
+
+# ---------- Logout callback ----------
+def logout_callback():
+    try:
+        sb.auth.sign_out()
     except Exception:
         pass
-
-# ---------- Initialize session_state keys ----------
-for key in ["login_email", "login_pwd", "reg_email", "reg_pwd", "logged_in"]:
-    if key not in st.session_state:
-        st.session_state[key] = "" if "email" in key or "pwd" in key else False
+    for k in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
+        st.session_state[k] = ""
+    st.experimental_rerun()
 
 # ---------- Authentication ----------
-# Fetch user
 user = get_user(sb)
 
-# ---------------- LOGIN / REGISTER ----------------
 if not user:
     st.sidebar.title("Account")
     login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
 
     # ---------------- Login Tab ----------------
     with login_tab:
-        login_email = st.text_input("Email", value=st.session_state.login_email, key="login_email")
-        login_pwd = st.text_input("Password", type="password", value=st.session_state.login_pwd, key="login_pwd")
-
-        if st.button("Login", key="login_btn"):
-            try:
-                sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
-                st.session_state.logged_in = True
-                st.success("Logged in — reloading...")
-                safe_rerun()
-            except Exception as e:
-                msg = str(e)
-                if "Email not confirmed" in msg:
-                    st.error("Your email is not confirmed. Check your inbox (or spam).")
-                    st.caption("If you didn't receive it, resend from Supabase → Authentication → Users → Resend confirmation.")
-                else:
-                    st.error(f"Login failed: {e}")
+        st.text_input("Email", key="login_email")
+        st.text_input("Password", type="password", key="login_pwd")
+        st.button("Login", on_click=login_callback)
 
     # ---------------- Register Tab ----------------
     with register_tab:
-        reg_email = st.text_input("Email (new)", value=st.session_state.reg_email, key="reg_email")
-        reg_pwd = st.text_input("Password (new)", type="password", value=st.session_state.reg_pwd, key="reg_pwd")
+        st.text_input("Email (new)", key="reg_email")
+        st.text_input("Password (new)", type="password", key="reg_pwd")
 
-        if st.button("Create account", key="register_btn"):
+        def register_callback():
             try:
-                sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
+                sb.auth.sign_up({
+                    "email": st.session_state.reg_email,
+                    "password": st.session_state.reg_pwd
+                })
+                st.session_state.reg_email = ""
+                st.session_state.reg_pwd = ""
                 st.success("Account created. Check your email if confirmation is enabled.")
-                safe_rerun()
+                st.experimental_rerun()
             except Exception as e:
                 st.error(f"Signup failed: {e}")
 
-    st.stop()
+        st.button("Create account", on_click=register_callback)
 
-# Refetch user immediately after login/logout
-user = get_user(sb)
+    st.stop()  # Stop main app until logged in
 
-# ---------------- Sidebar: Logged-in User ----------------
+# ---------- Sidebar: Logged-in User ----------
 st.sidebar.success(f"Signed in as {user.email}")
-if st.sidebar.button("Logout", key="logout_btn"):
-    try:
-        sb.auth.sign_out()
-    except Exception:
-        pass
-    # Clear session_state flags
-    for k in ["login_email", "login_pwd", "reg_email", "reg_pwd", "logged_in"]:
-        st.session_state[k] = "" if "email" in k or "pwd" in k else False
-    safe_rerun()
+st.sidebar.button("Logout", on_click=logout_callback)
 
-# ---------------- Main App ----------------
+# ---------- Main App ----------
 st.title("🚗 Vehicle CO₂ Emissions Predictor")
 st.markdown("Predict vehicle **CO₂ emissions (g/km)** based on specifications using a Multiple Linear Regression model.")
 
@@ -113,6 +116,7 @@ if st.sidebar.button("Predict"):
     })
     prediction = model.predict(input_data)[0]
 
+    # Results
     st.subheader("🔮 Predicted CO₂ Emissions")
     st.metric("CO₂ emissions (g/km)", f"{prediction:.2f}")
 
@@ -131,6 +135,7 @@ if st.sidebar.button("Predict"):
     st.write(f"**RMSE:** {rmse:.2f} g/km")
     st.write(f"**MAE:** {mae:.2f} g/km")
 
+    # Graphs
     col1, col2 = st.columns(2)
     with col1:
         st.write("### 📈 Actual vs Predicted")
@@ -161,7 +166,7 @@ if st.sidebar.button("Predict"):
     sns.barplot(x="Category", y="CO₂ emissions (g/km)", data=comparison_df, palette="Set2", ax=ax)
     st.pyplot(fig)
 
-    # Save prediction
+    # Save Prediction
     try:
         current_user_resp = sb.auth.get_user()
         current_user = getattr(current_user_resp, "user", current_user_resp.get("user", None))
@@ -176,7 +181,7 @@ if st.sidebar.button("Predict"):
     except Exception as e:
         st.warning(f"Could not save prediction to history: {e}")
 
-    # Display user prediction history
+    # User Prediction History
     st.write("---")
     st.subheader("🗂️ Your recent predictions")
     try:
