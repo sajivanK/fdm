@@ -38,7 +38,7 @@ def login_callback():
         st.session_state.login_pwd = ""
         st.session_state.login_message = "Logged in successfully!"
         st.session_state.login_error = ""
-        st.session_state.user = get_user(sb)
+        st.session_state.user = get_user(sb)  # Refetch user after login
     except Exception as e:
         msg = str(e)
         if "Email not confirmed" in msg:
@@ -182,7 +182,7 @@ if st.sidebar.button("Predict"):
     # Save Prediction
     try:
         current_user_resp = sb.auth.get_user()
-        current_user = getattr(current_user_resp, "user", current_user_resp.get("user", None))
+        current_user = getattr(current_user_resp, "user", None)
         if current_user:
             features_payload = input_data.iloc[0].to_dict()
             payload = {
@@ -198,18 +198,29 @@ if st.sidebar.button("Predict"):
     st.write("---")
     st.subheader("🗂️ Your recent predictions")
     try:
-        hist = sb.table("co2_predictions").select("*").order("created_at", desc=True).limit(20).execute()
-        if hist and getattr(hist, "data", None):
-            rows = []
-            for r in hist.data:
-                row = {"When": r["created_at"], "Predicted CO₂ (g/km)": r["predicted_co2"]}
-                if r.get("features"):
-                    row.update(r["features"])
-                rows.append(row)
-            df_hist = pd.DataFrame(rows)
-            st.dataframe(df_hist, use_container_width=True)
-        else:
-            st.caption("No saved predictions yet.")
+        current_user_resp = sb.auth.get_user()
+        current_user = getattr(current_user_resp, "user", None)
+        if current_user:
+            hist = (
+                sb.table("co2_predictions")
+                .select("*")
+                .eq("user_id", current_user.id)  # Only fetch current user's history
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+            )
+
+            if hist and getattr(hist, "data", None):
+                rows = []
+                for r in hist.data:
+                    row = {"When": r["created_at"], "Predicted CO₂ (g/km)": r["predicted_co2"]}
+                    if r.get("features"):
+                        row.update(r["features"])
+                    rows.append(row)
+                df_hist = pd.DataFrame(rows)
+                st.dataframe(df_hist, use_container_width=True)
+            else:
+                st.caption("No saved predictions yet.")
     except Exception as e:
         st.warning(f"Could not load history: {e}")
 
