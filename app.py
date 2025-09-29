@@ -24,22 +24,42 @@ df = pd.read_csv("cleaned_vehicle_dataset.csv")
 # =========================
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🚗", layout="wide")
 
-# --- Authentication UI (put this BEFORE your main app UI) ---
-# Using the sidebar keeps the main UI clean.
+# --- Authentication UI (safe rerun + clear inputs) ---
 st.sidebar.title("Account")
 
+def safe_rerun():
+    """
+    Try to call streamlit rerun. If not available in this runtime,
+    swallow the error so the app doesn't show a false 'login failed' message.
+    """
+    try:
+        st.experimental_rerun()
+    except Exception:
+        # experimental_rerun not available — do nothing (no error shown)
+        return
+
+# Sidebar tabs (keeps main UI clean)
 login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
 
 with login_tab:
+    # Use explicit session_state keys so we can clear them later
     login_email = st.text_input("Email", key="login_email")
     login_pwd = st.text_input("Password", type="password", key="login_pwd")
     if st.button("Login", key="login_btn"):
         try:
             sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
+            # Clear the fields so they don't persist
+            st.session_state["login_email"] = ""
+            st.session_state["login_pwd"] = ""
             st.success("Logged in — reloading...")
-            st.experimental_rerun()
+            safe_rerun()
         except Exception as e:
-            st.error(f"Login failed: {e}")
+            msg = str(e)
+            if "Email not confirmed" in msg:
+                st.error("Your email is not confirmed. Check your inbox (or spam).")
+                st.caption("If you didn't receive it, open Supabase → Authentication → Users → Resend confirmation.")
+            else:
+                st.error(f"Login failed: {e}")
 
 with register_tab:
     reg_email = st.text_input("Email (new)", key="reg_email")
@@ -47,6 +67,9 @@ with register_tab:
     if st.button("Create account", key="register_btn"):
         try:
             sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
+            # clear register fields
+            st.session_state["reg_email"] = ""
+            st.session_state["reg_pwd"] = ""
             st.success("Account created. If email confirmation is ON, check your email.")
         except Exception as e:
             st.error(f"Signup failed: {e}")
@@ -60,7 +83,11 @@ if user:
             sb.auth.sign_out()
         except Exception:
             pass
-        st.experimental_rerun()
+        # Clear any auth UI fields as well
+        for k in ("login_email", "login_pwd", "reg_email", "reg_pwd"):
+            if k in st.session_state:
+                st.session_state[k] = ""
+        safe_rerun()
 else:
     st.info("Please log in or register to use the CO₂ predictor.")
     st.stop()
