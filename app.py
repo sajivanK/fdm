@@ -22,20 +22,17 @@ df = pd.read_csv("cleaned_vehicle_dataset.csv")
 # =========================
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🚗", layout="wide")
 
-# ---------------- Safe rerun helper ----------------
+# ---------- Safe rerun helper ----------
 def safe_rerun():
     try:
         st.experimental_rerun()
     except Exception:
-        return
+        pass
 
-# ---------------- Session Flags ----------------
-if "login_success" not in st.session_state:
-    st.session_state["login_success"] = False
-if "logout_success" not in st.session_state:
-    st.session_state["logout_success"] = False
-if "clear_inputs" not in st.session_state:
-    st.session_state["clear_inputs"] = False
+# ---------- Initialize session_state keys ----------
+for key in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
+    if key not in st.session_state:
+        st.session_state[key] = ""
 
 # ---------- Authentication ----------
 user = get_user(sb)
@@ -44,56 +41,52 @@ if not user:
     st.sidebar.title("Account")
     login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
 
-    # ---------------- Login ----------------
+    # ---------------- Login Tab ----------------
     with login_tab:
-        login_email = st.text_input("Email", key="login_email")
-        login_pwd = st.text_input("Password", type="password", key="login_pwd")
-
+        login_email = st.text_input("Email", value=st.session_state.login_email, key="login_email")
+        login_pwd = st.text_input("Password", type="password", value=st.session_state.login_pwd, key="login_pwd")
         if st.button("Login", key="login_btn"):
             try:
                 sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
-                st.session_state["login_success"] = True
-                st.session_state["clear_inputs"] = True
+                # Clear session_state values safely before rerun
+                st.session_state.login_email = ""
+                st.session_state.login_pwd = ""
+                st.success("Logged in — reloading...")
+                safe_rerun()
             except Exception as e:
                 msg = str(e)
                 if "Email not confirmed" in msg:
-                    st.error("Your email is not confirmed. Check your inbox or spam folder.")
+                    st.error("Your email is not confirmed. Check your inbox (or spam).")
+                    st.caption("If you didn't receive it, resend from Supabase → Authentication → Users → Resend confirmation.")
                 else:
                     st.error(f"Login failed: {e}")
 
-    # ---------------- Register ----------------
+    # ---------------- Register Tab ----------------
     with register_tab:
-        reg_email = st.text_input("Email (new)", key="reg_email")
-        reg_pwd = st.text_input("Password (new)", type="password", key="reg_pwd")
-
+        reg_email = st.text_input("Email (new)", value=st.session_state.reg_email, key="reg_email")
+        reg_pwd = st.text_input("Password (new)", type="password", value=st.session_state.reg_pwd, key="reg_pwd")
         if st.button("Create account", key="register_btn"):
             try:
                 sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
-                st.session_state["clear_inputs"] = True
+                st.session_state.reg_email = ""
+                st.session_state.reg_pwd = ""
                 st.success("Account created. Check your email if confirmation is enabled.")
+                safe_rerun()
             except Exception as e:
                 st.error(f"Signup failed: {e}")
-
-    # Clear inputs safely on next rerun
-    if st.session_state.get("clear_inputs", False):
-        for k in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
-            if k in st.session_state:
-                st.session_state[k] = ""
-        st.session_state["clear_inputs"] = False
-        safe_rerun()
 
     st.stop()  # Stop main app until logged in
 
 # ---------- Sidebar: Logged-in User ----------
 st.sidebar.success(f"Signed in as {user.email}")
-
 if st.sidebar.button("Logout", key="logout_btn"):
     try:
         sb.auth.sign_out()
     except Exception:
         pass
-    st.session_state["logout_success"] = True
-    st.session_state["clear_inputs"] = True
+    # Clear all auth-related session_state keys safely
+    for k in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
+        st.session_state[k] = ""
     safe_rerun()
 
 # ---------- Main App ----------
@@ -170,12 +163,7 @@ if st.sidebar.button("Predict"):
     # Save Prediction
     try:
         current_user_resp = sb.auth.get_user()
-        current_user = None
-        if hasattr(current_user_resp, "user"):
-            current_user = current_user_resp.user
-        elif isinstance(current_user_resp, dict) and "user" in current_user_resp:
-            current_user = current_user_resp["user"]
-
+        current_user = getattr(current_user_resp, "user", current_user_resp.get("user", None))
         if current_user:
             features_payload = input_data.iloc[0].to_dict()
             payload = {
