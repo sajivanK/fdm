@@ -78,30 +78,53 @@ def logout_callback():
 user = st.session_state.get("user", get_user(sb))
 
 if not user:
-    st.sidebar.title("Account")
-    login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
+    # Centered card UI
+    st.title("Welcome to Vehicle CO₂ Emissions Predictor")
+    st.markdown(
+        "<p style='text-align:center; color:gray;'>Please login or register to continue</p>",
+        unsafe_allow_html=True
+    )
+    
+    # Centering using columns
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown(
+            """
+            <div style='
+                padding: 2rem; 
+                border: 1px solid #ddd; 
+                border-radius: 10px; 
+                box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+                background-color: #f9f9f9;
+            '>
+            """,
+            unsafe_allow_html=True
+        )
 
-    # ---------------- Login Tab ----------------
-    with login_tab:
-        st.text_input("Email", key="login_email", value=st.session_state.login_email)
-        st.text_input("Password", type="password", key="login_pwd", value=st.session_state.login_pwd)
-        st.button("Login", on_click=login_callback)
-        # Display messages
-        if st.session_state.login_message:
-            st.success(st.session_state.login_message)
-        if st.session_state.login_error:
-            st.error(st.session_state.login_error)
+        # Tabs inside the card
+        login_tab, register_tab = st.tabs(["🔐 Login", "🆕 Register"])
 
-    # ---------------- Register Tab ----------------
-    with register_tab:
-        st.text_input("Email (new)", key="reg_email", value=st.session_state.reg_email)
-        st.text_input("Password (new)", type="password", key="reg_pwd", value=st.session_state.reg_pwd)
-        st.button("Create account", on_click=register_callback)
-        if st.session_state.login_message:
-            st.success(st.session_state.login_message)
-        if st.session_state.login_error:
-            st.error(st.session_state.login_error)
+        # ---------------- Login Tab ----------------
+        with login_tab:
+            st.text_input("Email", key="login_email", value=st.session_state.login_email)
+            st.text_input("Password", type="password", key="login_pwd", value=st.session_state.login_pwd)
+            st.button("Login", on_click=login_callback)
+            if st.session_state.login_message:
+                st.success(st.session_state.login_message)
+            if st.session_state.login_error:
+                st.error(st.session_state.login_error)
 
+        # ---------------- Register Tab ----------------
+        with register_tab:
+            st.text_input("Email (new)", key="reg_email", value=st.session_state.reg_email)
+            st.text_input("Password (new)", type="password", key="reg_pwd", value=st.session_state.reg_pwd)
+            st.button("Create account", on_click=register_callback)
+            if st.session_state.login_message:
+                st.success(st.session_state.login_message)
+            if st.session_state.login_error:
+                st.error(st.session_state.login_error)
+
+        st.markdown("</div>", unsafe_allow_html=True)
     st.stop()  # Stop main app until logged in
 
 # ---------- Sidebar: Logged-in User ----------
@@ -204,7 +227,7 @@ if st.sidebar.button("Predict"):
             hist = (
                 sb.table("co2_predictions")
                 .select("*")
-                .eq("user_id", current_user.id)  # Only fetch current user's history
+                .eq("user_id", current_user.id)
                 .order("created_at", desc=True)
                 .limit(20)
                 .execute()
