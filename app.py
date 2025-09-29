@@ -23,9 +23,9 @@ df = pd.read_csv("cleaned_vehicle_dataset.csv")
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🚗", layout="wide")
 
 # ---------- Initialize session_state keys ----------
-for key in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
+for key in ["login_email", "login_pwd", "reg_email", "reg_pwd", "login_message", "login_error", "user"]:
     if key not in st.session_state:
-        st.session_state[key] = ""
+        st.session_state[key] = "" if "message" not in key and "error" not in key else None
 
 # ---------- Login callback ----------
 def login_callback():
@@ -36,15 +36,31 @@ def login_callback():
         })
         st.session_state.login_email = ""
         st.session_state.login_pwd = ""
-        st.success("Logged in — reloading...")
-        st.experimental_rerun()
+        st.session_state.login_message = "Logged in successfully!"
+        st.session_state.login_error = ""
+        st.session_state.user = get_user(sb)
     except Exception as e:
         msg = str(e)
         if "Email not confirmed" in msg:
-            st.error("Your email is not confirmed. Check your inbox (or spam).")
-            st.caption("If you didn't receive it, resend from Supabase → Authentication → Users → Resend confirmation.")
+            st.session_state.login_error = "Your email is not confirmed. Check your inbox (or spam)."
         else:
-            st.error(f"Login failed: {e}")
+            st.session_state.login_error = f"Login failed: {e}"
+        st.session_state.login_message = ""
+
+# ---------- Register callback ----------
+def register_callback():
+    try:
+        sb.auth.sign_up({
+            "email": st.session_state.reg_email,
+            "password": st.session_state.reg_pwd
+        })
+        st.session_state.reg_email = ""
+        st.session_state.reg_pwd = ""
+        st.session_state.login_message = "Account created. Check your email if confirmation is enabled."
+        st.session_state.login_error = ""
+    except Exception as e:
+        st.session_state.login_error = f"Signup failed: {e}"
+        st.session_state.login_message = ""
 
 # ---------- Logout callback ----------
 def logout_callback():
@@ -54,10 +70,12 @@ def logout_callback():
         pass
     for k in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
         st.session_state[k] = ""
-    st.experimental_rerun()
+    st.session_state.user = None
+    st.session_state.login_message = ""
+    st.session_state.login_error = ""
 
 # ---------- Authentication ----------
-user = get_user(sb)
+user = st.session_state.get("user", get_user(sb))
 
 if not user:
     st.sidebar.title("Account")
@@ -65,29 +83,24 @@ if not user:
 
     # ---------------- Login Tab ----------------
     with login_tab:
-        st.text_input("Email", key="login_email")
-        st.text_input("Password", type="password", key="login_pwd")
+        st.text_input("Email", key="login_email", value=st.session_state.login_email)
+        st.text_input("Password", type="password", key="login_pwd", value=st.session_state.login_pwd)
         st.button("Login", on_click=login_callback)
+        # Display messages
+        if st.session_state.login_message:
+            st.success(st.session_state.login_message)
+        if st.session_state.login_error:
+            st.error(st.session_state.login_error)
 
     # ---------------- Register Tab ----------------
     with register_tab:
-        st.text_input("Email (new)", key="reg_email")
-        st.text_input("Password (new)", type="password", key="reg_pwd")
-
-        def register_callback():
-            try:
-                sb.auth.sign_up({
-                    "email": st.session_state.reg_email,
-                    "password": st.session_state.reg_pwd
-                })
-                st.session_state.reg_email = ""
-                st.session_state.reg_pwd = ""
-                st.success("Account created. Check your email if confirmation is enabled.")
-                st.experimental_rerun()
-            except Exception as e:
-                st.error(f"Signup failed: {e}")
-
+        st.text_input("Email (new)", key="reg_email", value=st.session_state.reg_email)
+        st.text_input("Password (new)", type="password", key="reg_pwd", value=st.session_state.reg_pwd)
         st.button("Create account", on_click=register_callback)
+        if st.session_state.login_message:
+            st.success(st.session_state.login_message)
+        if st.session_state.login_error:
+            st.error(st.session_state.login_error)
 
     st.stop()  # Stop main app until logged in
 
