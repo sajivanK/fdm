@@ -5,3 +5,4 @@ scikit-learn==1.6.1
 joblib
 matplotlib
 seaborn
+supabase>=2.6.0
