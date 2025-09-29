@@ -30,14 +30,14 @@ def safe_rerun():
         pass
 
 # ---------- Initialize session_state keys ----------
-for key in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
+for key in ["login_email", "login_pwd", "reg_email", "reg_pwd", "logged_in"]:
     if key not in st.session_state:
-        st.session_state[key] = ""
+        st.session_state[key] = "" if "email" in key or "pwd" in key else False
 
 # ---------- Authentication ----------
 user = get_user(sb)
 
-if not user:
+if not user or not st.session_state.logged_in:
     st.sidebar.title("Account")
     login_tab, register_tab = st.sidebar.tabs(["🔐 Login", "🆕 Register"])
 
@@ -48,11 +48,8 @@ if not user:
         if st.button("Login", key="login_btn"):
             try:
                 sb.auth.sign_in_with_password({"email": login_email, "password": login_pwd})
-                # Clear session_state values safely before rerun
-                st.session_state.login_email = ""
-                st.session_state.login_pwd = ""
-                st.success("Logged in — reloading...")
-                safe_rerun()
+                st.session_state.logged_in = True  # Set login flag
+                safe_rerun()  # rerun app; login inputs disappear
             except Exception as e:
                 msg = str(e)
                 if "Email not confirmed" in msg:
@@ -68,8 +65,6 @@ if not user:
         if st.button("Create account", key="register_btn"):
             try:
                 sb.auth.sign_up({"email": reg_email, "password": reg_pwd})
-                st.session_state.reg_email = ""
-                st.session_state.reg_pwd = ""
                 st.success("Account created. Check your email if confirmation is enabled.")
                 safe_rerun()
             except Exception as e:
@@ -84,9 +79,7 @@ if st.sidebar.button("Logout", key="logout_btn"):
         sb.auth.sign_out()
     except Exception:
         pass
-    # Clear all auth-related session_state keys safely
-    for k in ["login_email", "login_pwd", "reg_email", "reg_pwd"]:
-        st.session_state[k] = ""
+    st.session_state.logged_in = False
     safe_rerun()
 
 # ---------- Main App ----------
